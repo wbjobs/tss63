@@ -1,12 +1,14 @@
 const FIVE_MINUTES = 5 * 60 * 1000;
 const MAX_BIDS_FOR_REGRESSION = 200;
 const MIN_BID_INTERVAL_MS = 300;
+const SENTIMENT_WINDOW = 60 * 1000;
 
 class AuctionStore {
   constructor() {
     this.bids = [];
     this.currentPrice = 100;
     this.predictedPrice = null;
+    this.sentimentIndex = 50;
     this.itemId = "item-001";
     this.itemName = "稀有虚拟宝石";
     this.basePrice = 100;
@@ -41,6 +43,7 @@ class AuctionStore {
       userName,
       price,
       timestamp: now,
+      isBot: String(userId).startsWith("bot-"),
     };
     this.bids.push(bid);
     this.currentPrice = price;
@@ -54,6 +57,7 @@ class AuctionStore {
     this.n += 1;
 
     this.cleanup();
+    this.sentimentIndex = this._computeSentiment();
     return bid;
   }
 
@@ -83,6 +87,44 @@ class AuctionStore {
       this.sumXX += x * x;
       this.n += 1;
     }
+  }
+
+  _computeSentiment() {
+    const now = Date.now();
+    const cutoff = now - SENTIMENT_WINDOW;
+    const recent = this.bids.filter((b) => b.timestamp >= cutoff);
+
+    if (recent.length === 0) {
+      return 50;
+    }
+
+    const bidCount = recent.length;
+    const windowSec = SENTIMENT_WINDOW / 1000;
+    const freq = bidCount / windowSec;
+
+    const freqScore = Math.min(1, freq / 1.5) * 100;
+
+    let minP = Infinity;
+    let maxP = -Infinity;
+    for (let i = 0; i < recent.length; i++) {
+      const p = recent[i].price;
+      if (p < minP) minP = p;
+      if (p > maxP) maxP = p;
+    }
+    const avgP = (minP + maxP) / 2 || 1;
+    const volatility = avgP > 0 ? ((maxP - minP) / avgP) * 100 : 0;
+
+    const volScore = Math.min(1, volatility / 15) * 100;
+
+    const sentiment = 0.45 * freqScore + 0.55 * volScore;
+    const smoothed = (this.sentimentIndex * 0.6) + (sentiment * 0.4);
+
+    return Math.max(0, Math.min(100, Math.round(smoothed * 10) / 10));
+  }
+
+  refreshSentiment() {
+    this.sentimentIndex = this._computeSentiment();
+    return this.sentimentIndex;
   }
 
   getRegressionStats() {
@@ -136,6 +178,7 @@ class AuctionStore {
       itemName: this.itemName,
       currentPrice: this.currentPrice,
       predictedPrice: this.predictedPrice,
+      sentimentIndex: this.sentimentIndex,
       basePrice: this.basePrice,
       recentBids: this.getRecentBids(),
       totalBids: this.bids.length,

@@ -36,6 +36,7 @@ ChartJS.register(
 const props = defineProps({
   actualPrices: { type: Array, default: () => [] },
   predictedPrices: { type: Array, default: () => [] },
+  sentiments: { type: Array, default: () => [] },
   labels: { type: Array, default: () => [] },
 });
 
@@ -48,10 +49,11 @@ const chartData = computed(() => ({
       borderColor: "#3b82f6",
       backgroundColor: "rgba(59, 130, 246, 0.1)",
       borderWidth: 2,
-      pointRadius: 4,
+      pointRadius: 3,
       pointBackgroundColor: "#3b82f6",
       fill: true,
       tension: 0.3,
+      yAxisID: "y",
     },
     {
       label: "预测价格",
@@ -60,10 +62,24 @@ const chartData = computed(() => ({
       backgroundColor: "rgba(245, 158, 11, 0.05)",
       borderWidth: 2,
       borderDash: [6, 4],
-      pointRadius: 3,
+      pointRadius: 2,
       pointBackgroundColor: "#f59e0b",
       fill: false,
       tension: 0.3,
+      yAxisID: "y",
+    },
+    {
+      label: "市场情绪指数",
+      data: [...props.sentiments],
+      borderColor: "#ef4444",
+      backgroundColor: "rgba(239, 68, 68, 0.05)",
+      borderWidth: 2,
+      borderDash: [3, 3],
+      pointRadius: 2,
+      pointBackgroundColor: "#ef4444",
+      fill: false,
+      tension: 0.35,
+      yAxisID: "y1",
     },
   ],
 }));
@@ -72,9 +88,20 @@ const chartOptions = Object.freeze({
   responsive: true,
   maintainAspectRatio: false,
   animation: { duration: 300 },
+  interaction: {
+    mode: "index",
+    intersect: false,
+  },
   plugins: {
     legend: {
       labels: { color: "#94a3b8", font: { size: 13 } },
+    },
+    tooltip: {
+      backgroundColor: "rgba(15, 23, 42, 0.95)",
+      titleColor: "#e2e8f0",
+      bodyColor: "#cbd5e1",
+      borderColor: "#334155",
+      borderWidth: 1,
     },
   },
   scales: {
@@ -83,8 +110,22 @@ const chartOptions = Object.freeze({
       grid: { color: "rgba(51, 65, 85, 0.5)" },
     },
     y: {
+      type: "linear",
+      display: true,
+      position: "left",
+      title: { display: true, text: "价格 (¥)", color: "#60a5fa" },
       ticks: { color: "#64748b" },
       grid: { color: "rgba(51, 65, 85, 0.5)" },
+    },
+    y1: {
+      type: "linear",
+      display: true,
+      position: "right",
+      min: 0,
+      max: 100,
+      title: { display: true, text: "情绪 (0-100)", color: "#f87171" },
+      ticks: { color: "#64748b" },
+      grid: { drawOnChartArea: false },
     },
   },
 });
@@ -107,6 +148,6 @@ const chartOptions = Object.freeze({
 
 .chart-container {
   position: relative;
-  height: 300px;
+  height: 320px;
 }
 </style>

@@ -3,10 +3,12 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const AuctionStore = require("./auctionStore");
+const { BotManager } = require("./botManager");
 const { predictPriceAsync } = require("./regression");
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -17,8 +19,22 @@ const io = new Server(server, {
 });
 
 const auction = new AuctionStore();
+const botManager = new BotManager(auction);
 const userCounter = { count: 0 };
 const pendingBids = new Map();
+
+botManager.setOnBidHandler((bid) => {
+  io.emit("new_bid", bid);
+  io.emit("price_update", {
+    currentPrice: auction.currentPrice,
+    predictedPrice: auction.predictedPrice,
+    sentimentIndex: auction.sentimentIndex,
+  });
+});
+
+function broadcastBotStatus() {
+  io.emit("bot_status", botManager.getStatusList());
+}
 
 io.on("connection", (socket) => {
   userCounter.count++;
@@ -30,6 +46,7 @@ io.on("connection", (socket) => {
   socket.emit("init", {
     ...auction.getState(),
     userName,
+    bots: botManager.getStatusList(),
   });
 
   io.emit("user_count", io.sockets.sockets.size);
@@ -38,6 +55,7 @@ io.on("connection", (socket) => {
     socket.emit("init", {
       ...auction.getState(),
       userName: socket.data.userName,
+      bots: botManager.getStatusList(),
     });
   });
 
@@ -79,7 +97,20 @@ io.on("connection", (socket) => {
     io.emit("price_update", {
       currentPrice: auction.currentPrice,
       predictedPrice: auction.predictedPrice,
+      sentimentIndex: auction.sentimentIndex,
     });
+  });
+
+  socket.on("admin_set_bots", ({ count }) => {
+    if (typeof count === "number" && count >= 0 && count <= 3) {
+      botManager.setActiveCount(count);
+      broadcastBotStatus();
+    }
+  });
+
+  socket.on("admin_toggle_bot", ({ botId, active }) => {
+    botManager.setBotActive(botId, active);
+    broadcastBotStatus();
   });
 
   socket.on("disconnect", () => {
@@ -90,22 +121,50 @@ io.on("connection", (socket) => {
 
 setInterval(async () => {
   const stats = auction.getRegressionStats();
-  if (!stats) return;
-  const predicted = await predictPriceAsync(stats, Date.now());
-  if (predicted !== null) {
-    auction.predictedPrice = predicted;
-    io.emit("price_update", {
-      currentPrice: auction.currentPrice,
-      predictedPrice: auction.predictedPrice,
-    });
+  auction.refreshSentiment();
+  if (stats) {
+    const predicted = await predictPriceAsync(stats, Date.now());
+    if (predicted !== null) {
+      auction.predictedPrice = predicted;
+    }
   }
+  io.emit("price_update", {
+    currentPrice: auction.currentPrice,
+    predictedPrice: auction.predictedPrice,
+    sentimentIndex: auction.sentimentIndex,
+  });
 }, 10000);
 
 app.get("/api/state", (_req, res) => {
-  res.json(auction.getState());
+  res.json({
+    ...auction.getState(),
+    bots: botManager.getStatusList(),
+  });
 });
+
+app.post("/api/admin/bots", (req, res) => {
+  const { count } = req.body || {};
+  if (typeof count === "number" && count >= 0 && count <= 3) {
+    botManager.setActiveCount(count);
+    broadcastBotStatus();
+    res.json({ ok: true, bots: botManager.getStatusList() });
+  } else {
+    res.status(400).json({ error: "count 必须是 0-3 之间的数字" });
+  }
+});
+
+app.post("/api/admin/bots/:botId/toggle", (req, res) => {
+  const { botId } = req.params;
+  const { active } = req.body || {};
+  botManager.setBotActive(botId, active);
+  broadcastBotStatus();
+  res.json({ ok: true, bots: botManager.getStatusList() });
+});
+
+botManager.startAll();
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`竞拍服务器运行在 http://localhost:${PORT}`);
+  console.log(`机器人: ${botManager.getStatusList().filter(b => b.active).length} 个已激活`);
 });

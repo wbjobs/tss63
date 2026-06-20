@@ -1,13 +1,16 @@
 const auctionState = reactive({
   currentPrice: 100,
   predictedPrice: null as number | null,
+  sentimentIndex: 50 as number,
   itemName: "稀有虚拟宝石",
   userCount: 0,
   recentBids: [] as any[],
   userName: "",
   chartActualPrices: [] as number[],
   chartPredictedPrices: [] as (number | null)[],
+  chartSentiments: [] as (number | null)[],
   chartLabels: [] as string[],
+  bots: [] as any[],
   initialized: false,
 });
 
@@ -22,19 +25,23 @@ export function useAuction() {
   const nuxtApp = useNuxtApp();
   const socket = (nuxtApp as any).$socket;
 
-  function addChartPoint(price: number, predicted: number | null) {
+  function addChartPoint(price: number, predicted: number | null, sentiment?: number | null) {
     const now = new Date();
     const label = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
 
     auctionState.chartLabels.push(label);
     auctionState.chartActualPrices.push(price);
     auctionState.chartPredictedPrices.push(predicted);
+    auctionState.chartSentiments.push(
+      sentiment !== undefined && sentiment !== null ? sentiment : auctionState.sentimentIndex
+    );
 
     const maxPoints = 60;
     if (auctionState.chartLabels.length > maxPoints) {
       auctionState.chartLabels = auctionState.chartLabels.slice(-maxPoints);
       auctionState.chartActualPrices = auctionState.chartActualPrices.slice(-maxPoints);
       auctionState.chartPredictedPrices = auctionState.chartPredictedPrices.slice(-maxPoints);
+      auctionState.chartSentiments = auctionState.chartSentiments.slice(-maxPoints);
     }
   }
 
@@ -44,10 +51,16 @@ export function useAuction() {
     socket.on("init", (data: any) => {
       auctionState.currentPrice = data.currentPrice;
       auctionState.predictedPrice = data.predictedPrice;
+      auctionState.sentimentIndex = data.sentimentIndex ?? 50;
       auctionState.itemName = data.itemName;
       auctionState.userName = data.userName;
       auctionState.recentBids = data.recentBids || [];
-      addChartPoint(data.currentPrice, data.predictedPrice);
+      auctionState.bots = data.bots || [];
+      addChartPoint(
+        data.currentPrice,
+        data.predictedPrice,
+        data.sentimentIndex ?? 50
+      );
     });
 
     socket.on("new_bid", (bid: any) => {
@@ -57,11 +70,18 @@ export function useAuction() {
     socket.on("price_update", (data: any) => {
       auctionState.currentPrice = data.currentPrice;
       auctionState.predictedPrice = data.predictedPrice;
-      addChartPoint(data.currentPrice, data.predictedPrice);
+      if (data.sentimentIndex !== undefined) {
+        auctionState.sentimentIndex = data.sentimentIndex;
+      }
+      addChartPoint(data.currentPrice, data.predictedPrice, data.sentimentIndex);
     });
 
     socket.on("user_count", (count: number) => {
       auctionState.userCount = count;
+    });
+
+    socket.on("bot_status", (bots: any[]) => {
+      auctionState.bots = bots;
     });
 
     socket.on("bid_ack", (ack: any) => {
@@ -109,9 +129,19 @@ export function useAuction() {
     socket.emit("bid", { price, requestId });
   }
 
+  function setBotCount(count: number) {
+    if (socket) socket.emit("admin_set_bots", { count });
+  }
+
+  function toggleBot(botId: string, active: boolean) {
+    if (socket) socket.emit("admin_toggle_bot", { botId, active });
+  }
+
   return {
     state: auctionState,
     submitBid,
+    setBotCount,
+    toggleBot,
     socket,
   };
 }
