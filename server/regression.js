@@ -18,6 +18,10 @@ function linearRegression(data) {
     sumXX += x * x;
   }
 
+  return computeRegression(n, sumX, sumY, sumXY, sumXX);
+}
+
+function computeRegression(n, sumX, sumY, sumXY, sumXX) {
   const denominator = n * sumXX - sumX * sumX;
   if (denominator === 0) {
     return { slope: 0, intercept: sumY / n };
@@ -27,6 +31,11 @@ function linearRegression(data) {
   const intercept = (sumY - slope * sumX) / n;
 
   return { slope, intercept };
+}
+
+function linearRegressionFromStats(stats) {
+  if (!stats || stats.n < 2) return null;
+  return computeRegression(stats.n, stats.sumX, stats.sumY, stats.sumXY, stats.sumXX);
 }
 
 function predictPrice(bids, currentTime) {
@@ -51,4 +60,27 @@ function predictPrice(bids, currentTime) {
   return Math.round(predicted * 100) / 100;
 }
 
-module.exports = { linearRegression, predictPrice };
+function predictPriceFromStats(stats, currentTime) {
+  if (!stats) return null;
+  const result = linearRegressionFromStats(stats);
+  if (!result) return null;
+  const x = (currentTime - stats.baseTime) / 1000;
+  const predicted = result.intercept + result.slope * x;
+  return Math.round(predicted * 100) / 100;
+}
+
+function predictPriceAsync(stats, currentTime) {
+  return new Promise((resolve) => {
+    setImmediate(() => {
+      resolve(predictPriceFromStats(stats, currentTime));
+    });
+  });
+}
+
+module.exports = {
+  linearRegression,
+  linearRegressionFromStats,
+  predictPrice,
+  predictPriceFromStats,
+  predictPriceAsync,
+};

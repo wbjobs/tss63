@@ -51,8 +51,8 @@ function formatTime(ts: number) {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
 }
 
-function handleBid(price: number) {
-  submitBid(price);
+function handleBid(price: number, onResult?: (success: boolean, err?: string) => void) {
+  submitBid(price, onResult);
 }
 </script>
 

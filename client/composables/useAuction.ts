@@ -11,6 +11,13 @@ const auctionState = reactive({
   initialized: false,
 });
 
+type AckHandler = (success: boolean, err?: string) => void;
+const pendingAckHandlers = new Map<string, AckHandler>();
+
+function generateRequestId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function useAuction() {
   const nuxtApp = useNuxtApp();
   const socket = (nuxtApp as any).$socket;
@@ -57,8 +64,22 @@ export function useAuction() {
       auctionState.userCount = count;
     });
 
+    socket.on("bid_ack", (ack: any) => {
+      const handler = pendingAckHandlers.get(ack.requestId);
+      if (handler) {
+        pendingAckHandlers.delete(ack.requestId);
+        handler(true);
+      }
+    });
+
     socket.on("bid_error", (err: any) => {
-      alert(err.message);
+      const handler = err.requestId ? pendingAckHandlers.get(err.requestId) : null;
+      if (handler) {
+        pendingAckHandlers.delete(err.requestId);
+        handler(false, err.message);
+      } else {
+        alert(err.message);
+      }
     });
 
     if (socket.connected) {
@@ -70,10 +91,22 @@ export function useAuction() {
     }
   }
 
-  function submitBid(price: number) {
-    if (socket) {
-      socket.emit("bid", price);
+  function submitBid(price: number, onResult?: AckHandler) {
+    if (!socket) {
+      if (onResult) onResult(false, "未连接到服务器");
+      return;
     }
+    const requestId = generateRequestId();
+    if (onResult) {
+      pendingAckHandlers.set(requestId, onResult);
+      setTimeout(() => {
+        if (pendingAckHandlers.has(requestId)) {
+          pendingAckHandlers.delete(requestId);
+          onResult(false, "请求超时，请重试");
+        }
+      }, 8000);
+    }
+    socket.emit("bid", { price, requestId });
   }
 
   return {

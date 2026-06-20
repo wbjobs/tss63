@@ -7,6 +7,7 @@
         :min="currentPrice + 1"
         :placeholder="`最低 ¥${currentPrice + 1}`"
         class="bid-field"
+        :disabled="submitting"
         @keyup.enter="submitBid"
       />
       <button class="bid-btn" @click="submitBid" :disabled="submitting">
@@ -18,6 +19,7 @@
         v-for="increment in quickIncrements"
         :key="increment"
         class="quick-btn"
+        :disabled="submitting"
         @click="bidAmount = currentPrice + increment"
       >
         +{{ increment }}
@@ -49,6 +51,7 @@ watch(
 );
 
 function submitBid() {
+  if (submitting.value) return;
   if (!bidAmount.value || bidAmount.value <= props.currentPrice) return;
 
   if (props.predictedPrice !== null && bidAmount.value < props.predictedPrice) {
@@ -59,10 +62,12 @@ function submitBid() {
   }
 
   submitting.value = true;
-  emit("bid", bidAmount.value);
-  setTimeout(() => {
+  emit("bid", bidAmount.value, (success, errMsg) => {
     submitting.value = false;
-  }, 500);
+    if (!success && errMsg) {
+      alert(errMsg);
+    }
+  });
 }
 </script>
 
@@ -91,6 +96,11 @@ function submitBid() {
 
 .bid-field:focus {
   border-color: #3b82f6;
+}
+
+.bid-field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .bid-btn {
@@ -130,9 +140,14 @@ function submitBid() {
   transition: all 0.2s;
 }
 
-.quick-btn:hover {
+.quick-btn:hover:not(:disabled) {
   background: #1e293b;
   color: #e2e8f0;
   border-color: #3b82f6;
+}
+
+.quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
